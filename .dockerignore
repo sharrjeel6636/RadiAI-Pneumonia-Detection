@@ -1,0 +1,16 @@
+# Exclude development, environment, and build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+venv/
+.git
+.gitignore
+.dockerignore
+Dockerfile
+temp_uploads/
+static/
+*.log
+.DS_Store
