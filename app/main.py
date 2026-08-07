@@ -2,7 +2,9 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from .schemas import InferenceResponse
 from .inference import run_inference
+from .assistant_service import get_health_report
 import os
+import base64
 
 app = FastAPI()
 
@@ -21,16 +23,20 @@ async def predict(file: UploadFile = File(...)):
     is_dicom = file.content_type == "application/dicom" or file.filename.endswith(".dcm")
 
     try:
-        prediction, heatmap_base64 = run_inference(file_bytes, is_dicom=is_dicom)
+        prediction, confidence, heatmap_base64 = run_inference(file_bytes, is_dicom=is_dicom)
 
         # Save heatmap to static directory
         heatmap_path = os.path.join(STATIC_DIR, f"{file.filename}_heatmap.png")
         with open(heatmap_path, "wb") as f:
             f.write(base64.b64decode(heatmap_base64))
 
+        report = get_health_report(prediction, confidence)
+
         return InferenceResponse(
             prediction=prediction,
-            heatmap_url=f"/static/{file.filename}_heatmap.png"
+            confidence=confidence,
+            heatmap_url=f"/static/{file.filename}_heatmap.png",
+            **report
         )
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))

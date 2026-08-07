@@ -28,7 +28,11 @@ def run_inference(file_bytes: bytes, is_dicom: bool = False):
 
         # Inference
         output = model(input_tensor)
-        prediction = torch.argmax(output, dim=1).item()
+        probabilities = torch.nn.functional.softmax(output, dim=1)
+        confidence, prediction_idx = torch.max(probabilities, dim=1)
+
+        prediction = prediction_idx.item()
+        confidence = confidence.item()
 
         # Grad-CAM
         # Target the last convolutional layer
@@ -41,6 +45,6 @@ def run_inference(file_bytes: bytes, is_dicom: bool = False):
         attr = (attr - attr.min()) / (attr.max() - attr.min() + 1e-8)
         heatmap = Image.fromarray((attr * 255).astype(np.uint8)).resize(image.size)
 
-        return str(prediction), image_to_base64(heatmap)
+        return str(prediction), confidence, image_to_base64(heatmap)
     except Exception as e:
         raise RuntimeError(f"Inference failed: {e}")
