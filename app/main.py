@@ -8,6 +8,10 @@ import base64
 
 app = FastAPI()
 
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
+
 # Mount static files directory
 STATIC_DIR = "static"
 if not os.path.exists(STATIC_DIR):
