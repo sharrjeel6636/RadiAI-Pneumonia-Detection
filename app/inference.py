@@ -5,11 +5,27 @@ from .utils import base64_to_image, dicom_to_image, image_to_base64
 from PIL import Image
 import numpy as np
 import io
+import os
 
-# For simplicity, using a pre-trained ResNet18
-# TODO: Replace with your actual model checkpoint loading logic
-model = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
-model.eval()
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load model
+def load_model():
+    model = models.resnet18(weights=None)
+    num_ftrs = model.fc.in_features
+    model.fc = torch.nn.Linear(num_ftrs, 2)
+
+    weights_path = 'app/models/best_model.pth'
+    if not os.path.exists(weights_path):
+        raise FileNotFoundError(f"Model weights not found at {weights_path}")
+
+    model.load_state_dict(torch.load(weights_path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
+
+model = load_model()
 
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
@@ -24,27 +40,30 @@ def run_inference(file_bytes: bytes, is_dicom: bool = False):
         else:
             image = Image.open(io.BytesIO(file_bytes)).convert('RGB')
 
-        input_tensor = transform(image).unsqueeze(0)
+        input_tensor = transform(image).unsqueeze(0).to(device)
 
         # Inference
-        output = model(input_tensor)
-        probabilities = torch.nn.functional.softmax(output, dim=1)
-        confidence, prediction_idx = torch.max(probabilities, dim=1)
+        with torch.no_grad():
+            output = model(input_tensor)
+            probabilities = torch.nn.functional.softmax(output, dim=1)
+            confidence, prediction_idx = torch.max(probabilities, dim=1)
 
-        prediction = prediction_idx.item()
-        confidence = confidence.item()
+        # Map index to label
+        labels = {0: "Normal", 1: "Pneumonia"}
+        prediction_label = labels[prediction_idx.item()]
+        confidence_val = confidence.item()
 
         # Grad-CAM
         # Target the last convolutional layer
-        target_layer = model.layer4[1].conv2
+        target_layer = model.layer4[-1]
         grad_cam = LayerGradCam(model, target_layer)
-        attr = grad_cam.attribute(input_tensor, target=prediction)
+        attr = grad_cam.attribute(input_tensor, target=prediction_idx.item())
 
         # Process heatmap
-        attr = attr.detach().squeeze().numpy()
+        attr = attr.detach().squeeze().cpu().numpy()
         attr = (attr - attr.min()) / (attr.max() - attr.min() + 1e-8)
         heatmap = Image.fromarray((attr * 255).astype(np.uint8)).resize(image.size)
 
-        return str(prediction), confidence, image_to_base64(heatmap)
+        return prediction_label, confidence_val, image_to_base64(heatmap)
     except Exception as e:
         raise RuntimeError(f"Inference failed: {e}")
