@@ -7,3 +7,4 @@ pillow
 numpy
 pydantic
 pydicom
+python-multipart
